@@ -269,18 +269,18 @@ class Robot:
         self._warning_song_num = int(math.fabs(song_number)) % 5
 
         # Song is in c major scale and is the 5th (G) to the 3rd (E).
-        cmd = "140 " + str(self._warning_song_num) + " 2 67 32 64 32"
+        cmd = "140 " + str(self._warning_song_num) + " 2 67 16 64"
 
         self._serial_conn.send_command(cmd)
 
-    def play_waring_song(self):
+    def play_warning_song(self):
         """ Plays the warning song
         """
         if self._warning_song_num is None:
             self.set_warning_song(0)
 
         self._serial_conn.send_command("141 " + str(self._warning_song_num))
-        
+
     # -------------------------------------------------------------------- #
     # -                     Sensor Reading Methods                       - #
     # -------------------------------------------------------------------- #
@@ -539,7 +539,10 @@ class Robot:
             return (Drive.MIN_DIST - ref_dist) - (Drive.MAX_DIST - new_dist)
 
     # TODO: catch case where encoder turns over. How?
-    def angle(self, ref_angle, new_angle, radians=False, cw=True):
+    def angle(self, ref_angle, new_angle=None, radians=False, cw=True):
+        if new_angle is None:
+            new_angle = self.encoder_angle(radians=radians)
+
         # CW = enc_L -> F & enc_R -> B
         return new_angle - ref_angle
 
