@@ -86,7 +86,7 @@ class Drive:
 
 class Bump:
     """ Represents the two different bumps on the IRobot Create 2. The value
-        of each button are the corresponding bit it refers to in the bump and
+        of each bump are the corresponding bit it refers to in the bump and
         wheel drop packet.
 
         This also contains the packet id, and the number of data bytes to read.
@@ -102,7 +102,7 @@ class Bump:
 
 class WheelDrop:
     """ Represents the two different wheel drops on the IRobot Create 2. The
-        value of each button are the corresponding bit it refers to in the
+        value of each wheel drop are the corresponding bit it refers to in the
         bump and wheel drop packet.
 
         This also contains the packet id, and the number of data bytes to read.
@@ -115,6 +115,32 @@ class WheelDrop:
     # Packet Information
     PACKET_ID = 7
     DATA_BYTES = 1
+
+class Cliff:
+    """ Represents the cliff and virtual wall sensors on the IRobot Create 2.
+        The value of each sensor are the corresponding packet ID.
+
+        This also contains the number of data bytes to read.
+    """
+
+    CLIFF_L = 9
+    CLIFF_FL = 10
+    CLIFF_R = 11
+    CLIFF_FR = 12
+    VIRTUAL_WALL = 13
+    DATA_BYTES = 1
+
+    @staticmethod
+    def list():
+        """ Creates a iterable list of all cliff and virtual wall sensors.
+        :return:
+            A list of all cliff and virtual wall sensors.
+        """
+        return [Cliff.CLIFF_L,
+                Cliff.CLIFF_FL,
+                Cliff.CLIFF_R,
+                Cliff.CLIFF_FR,
+                Cliff.VIRTUAL_WALL]
 
 # =============================================================================
 #                       iRobot Create 2's Interface
@@ -129,6 +155,7 @@ class Robot:
     state = None
 
     _serial_conn = None
+    _warning_song_num = None
 
     def __init__(self, port, buad=_BAUD_RATE, timeout=_TIMEOUT, start=True):
         """ Initializes a robot by first establishing the serial connection to
@@ -211,6 +238,49 @@ class Robot:
         # Sends drive command to robot
         self._serial_conn.send_command("137 %s %s %s %s" % data)
 
+    def drive_direct(self, vel_r=0, vel_l=0):
+        """ Controls the motors of the robot explicitly in velocity.
+
+            Velocity range is -500 to 500 mm/s.
+
+        :param vel_r:
+            The velocity of the right wheel. This is a 16-bit number.
+        :param vel_l:
+            The velocity of the left wheel. This is a 16 bit number.
+        """
+        bound_vel_r = self._convert_bound(vel_r, Drive.MIN_VEL, Drive.MAX_VEL)
+        bound_vel_l = self._convert_bound(vel_l, Drive.MIN_VEL, Drive.MAX_VEL)
+
+        data = (bound_vel_r >> _BYTE_SIZE & _BYTE,
+                bound_vel_r & _BYTE,
+                bound_vel_l >> _BYTE_SIZE & _BYTE,
+                bound_vel_l & _BYTE)
+
+        self._serial_conn.send_command("145 %s %s %s %s" % data)
+
+    def set_warning_song(self, song_number):
+        """ Sets the warning song to the specified song number. This should
+            be called before playing the warning song.
+
+        :param song_number:
+            The song number. Range: 0-4
+        :return:
+        """
+        self._warning_song_num = int(math.fabs(song_number)) % 5
+
+        # Song is in c major scale and is the 5th (G) to the 3rd (E).
+        cmd = "140 " + str(self._warning_song_num) + " 2 67 32 64 32"
+
+        self._serial_conn.send_command(cmd)
+
+    def play_waring_song(self):
+        """ Plays the warning song
+        """
+        if self._warning_song_num is None:
+            self.set_warning_song(0)
+
+        self._serial_conn.send_command("141 " + str(self._warning_song_num))
+        
     # -------------------------------------------------------------------- #
     # -                     Sensor Reading Methods                       - #
     # -------------------------------------------------------------------- #
@@ -260,7 +330,7 @@ class Robot:
                 Button.CLOCK: bool(byte & Button.CLOCK)
             }
         else:
-            return  {
+            return {
                 Button.CLEAN: False,
                 Button.SPOT: False,
                 Button.DOCK: False,
@@ -392,6 +462,43 @@ class Robot:
                 WheelDrop.WHEEL_DROP_R: False
             }
 
+    def read_cliff(self, cliff):
+        """ Reads the provided cliff or virtual wall sensor. This method is
+            available to a robot in the PASSIVE, SAFE, or FULL state.
+
+        :type cliff Cliff
+        :param cliff:
+            The cliff sensor to read
+        :return:
+            The value of the specified cliff sensor.
+        """
+        data = self._read_packet(cliff, Cliff.DATA_BYTES)
+
+        if len(data) == Cliff.DATA_BYTES:
+            byte = struct.unpack("B", data)[0]
+
+            return bool(byte)
+        else:
+            return False
+
+    def read_cliffs(self):
+        """ Reads all the cliff and virtual wall sensors. This method is
+            available to a robot in the PASSIVE, SAFE, or FULL state.
+
+        :return:
+            A dictionary of all the cliff and virtual wall sensors. Each record
+            is addressed by the value in Cliff. Thus, the
+            individual cliff values can be acquired by like so:
+                cliff_l = someRobot.read_cliff()[Cliff.CLIFF_L]
+        """
+        cliff_list = Cliff.list()
+        rtn = {}
+
+        for clf in cliff_list:
+            rtn[clf] = self.read_cliff(clf)
+
+        return rtn
+
     def read_right_encoder(self):
         """ Reads the distance of the right encoder's count.
 
@@ -416,11 +523,24 @@ class Robot:
     # -                         Helper Methods                           - #
     # -------------------------------------------------------------------- #
 
-    # TODO: catch case where encoder turns over
-    def distance(self, ref_dist, new_dist):
-        return new_dist - ref_dist
 
-    def angle(self, ref_angle, new_angle, radians=False):
+    def distance(self, ref_dist, new_dist=None, forward=True):
+        if new_dist is None:
+            new_dist = self.encoder_distance()
+
+        turnover = (forward and ref_dist >= 0 and new_dist < 0) or \
+                   (not forward and ref_dist <= 0 and new_dist > 0)
+
+        if not turnover:
+            return new_dist - ref_dist
+        elif forward:
+            return (Drive.MAX_DIST - ref_dist) - (Drive.MIN_DIST - new_dist)
+        else:
+            return (Drive.MIN_DIST - ref_dist) - (Drive.MAX_DIST - new_dist)
+
+    # TODO: catch case where encoder turns over. How?
+    def angle(self, ref_angle, new_angle, radians=False, cw=True):
+        # CW = enc_L -> F & enc_R -> B
         return new_angle - ref_angle
 
     def encoder_distance(self):
