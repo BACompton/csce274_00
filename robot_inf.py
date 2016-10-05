@@ -19,7 +19,6 @@ _BYTE_SIZE = 8          # The number of bit in a byte of iRobot Create 2
 _WHEEL_DIAMETER = 72.0
 _WHEEL_BASE = 235.0
 _COUNTS_PER_REV = 508.8
-_ENCODERS = 2            # Number of encoders
 
 
 class State:
@@ -76,13 +75,20 @@ class Drive:
     MIN_ENCODER = -32768
     MAX_DIST = MAX_ENCODER*math.pi*_WHEEL_DIAMETER/_COUNTS_PER_REV
     MIN_DIST = MIN_ENCODER*math.pi*_WHEEL_DIAMETER/_COUNTS_PER_REV
-    MAX_ANGLE = MAX_ENCODER-MIN_ENCODER / _WHEEL_BASE
-    MIN_ANGLE = MIN_ENCODER-MAX_ENCODER / _WHEEL_BASE
 
     # Packet Information
-    ENCODER_R_ID = 43
-    ENCODER_L_ID = 44
+    ENCODER_R = 43
+    ENCODER_L = 44
     ENCODER_BYTES = 2
+
+    @staticmethod
+    def list():
+        """ Creates a iterable list of all encoders.
+        :return:
+            A list of all encoders.
+        """
+        return [Drive.ENCODER_L,
+                Drive.ENCODER_R]
 
 class Bump:
     """ Represents the two different bumps on the IRobot Create 2. The value
@@ -499,83 +505,122 @@ class Robot:
 
         return rtn
 
-    def read_right_encoder(self):
-        """ Reads the distance of the right encoder's count.
+    def read_encoder(self, encoder):
+        """ Reads the specified encoder's count.
 
+        :type encoder Drive:
+        :param encoder:
+            The encoder to read.
         :return:
-            The distance represented by the right encoder's count.
+            The distance of represented by the encoder's count.
         """
-        counts = self._read_encoder_raw(Drive.ENCODER_R_ID)
+        counts = self._read_encoder_raw(encoder)
 
         return counts*math.pi*_WHEEL_DIAMETER / _COUNTS_PER_REV
 
-    def read_left_encoder(self):
-        """ Reads the distance of the left encoder's count.
+    def read_encoders(self):
+        """ Reads the count of the encoders.
 
         :return:
-            The distance represented by the left encoder's count.
+            A dictionary of each encoder's count as distance. Can be
+            referenced by using the encoder values in Drive.
         """
-        counts = self._read_encoder_raw(Drive.ENCODER_L_ID)
+        enc_list = Drive.encoder_list()
+        rtn = {}
 
-        return counts*math.pi*_WHEEL_DIAMETER / _COUNTS_PER_REV
+        for enc in enc_list:
+            rtn[enc] = self.read_encoder(enc)
+
+        return rtn
+
 
     # -------------------------------------------------------------------- #
     # -                         Helper Methods                           - #
     # -------------------------------------------------------------------- #
 
-
     def distance(self, ref_dist, new_dist=None, forward=True):
+        """ Calculates the distance between two encoder counts represented
+            as distances in mm.
+
+        :param ref_dist:
+            The reference encoder distance
+        :param new_dist:
+            The new encoder distance
+        :param forward:
+            Flag used to determine turnover
+        :return:
+            The averaged distance of traveled by each encoder.
+        """
         if new_dist is None:
-            new_dist = self.encoder_distance()
+            new_dist = self.read_encoders()
 
-        turnover = (forward and ref_dist >= 0 and new_dist < 0) or \
-                   (not forward and ref_dist <= 0 and new_dist > 0)
+        enc_count = 0
+        enc_sum = 0
+        # For each encoder in both dictionaries increment encoder count and
+        # add the difference between the encoder's value to a running summation.
+        for dist in ref_dist:
+            if new_dist.has_key(dist):
+                enc_count += 1
+                enc_sum += Robot._encoder_diff(ref_dist[dist],
+                                                 new_dist[dist],
+                                                 forward)
 
-        if not turnover:
-            return new_dist - ref_dist
-        elif forward:
-            return (Drive.MAX_DIST - ref_dist) - (Drive.MIN_DIST - new_dist)
-        else:
-            return (Drive.MIN_DIST - ref_dist) - (Drive.MAX_DIST - new_dist)
+        # Average the difference between encoders values
+        return enc_sum / enc_count
 
-    # TODO: catch case where encoder turns over. How?
     def angle(self, ref_angle, new_angle=None, radians=False, cw=True):
-        if new_angle is None:
-            new_angle = self.encoder_angle(radians=radians)
+        """ Calculates the change in angle between two encoder values. Both
+            angles should be of the same unit (degree or radian).
 
-        # CW = enc_L -> F & enc_R -> B
-        return new_angle - ref_angle
-
-    def encoder_distance(self):
-        """ This will read the distance of each encoder and average together.
-
-            Note: This is the distance a specific encoder count represents.
-                  To get the travel distance you will need a reference frame.
-        :return:
-            The averaged distance in mm represented by the encoder counts.
-        """
-        return (self.read_right_encoder()+self.read_left_encoder()) \
-               / _ENCODERS
-
-    def encoder_angle(self, radians=False):
-        """ This will read the distance of each encoder and transform it into
-            an angle. By default, the angle will be returned in degrees.
-
-            Note: This is the angle a specific encoder count represents.
-                  To get the change in angle you will need a reference frame.
+           This method only support a differential drive system.
+        :param ref_angle:
+            The reference encoder values
+        :param new_angle:
+            The new encoder values
         :param radians:
-            Flags the angle to be converted into radians.
+            Flag to determine the unit of the angle.
+        :param cw:
+            Flag used to determine turnover
         :return:
-            The angle represented by the encoder counts.
+            The change in angle between the two encoder values.
         """
-        angle = (self.read_right_encoder()-self.read_left_encoder()) \
-                    / _WHEEL_BASE
-        to_degrees = 180/math.pi
+        if new_angle is None:
+            new_angle = self.read_encoders()
+
+        diff = {}
+        # Only add the difference of the keys that match the value of encoder
+        # left or encoder right.
+        for dist in ref_angle:
+            if new_angle.has_key(dist):
+                forward = None
+
+                # Note for Differential Drive:
+                # CW = enc_L -> Forward & enc_R -> Backward
+                # CCW = enc_L -> Backward & enc_R -> Forward
+
+                if dist == Drive.ENCODER_L:
+                    forward = cw
+                elif dist == Drive.ENCODER_R:
+                    forward = not cw
+
+                if forward is not None:
+                    diff[dist] = Robot._encoder_diff(ref_angle[dist],
+                                                     new_angle[dist],
+                                                     forward)
+
+        if len(diff) != 2:
+            print "Not enough encoder values provided to calculate angle for" \
+                  "a differential drive system."
+            return 0
+
+        angle = (diff[Drive.ENCODER_R] - diff[Drive.ENCODER_L]) / _WHEEL_BASE
 
         if radians:
             return angle
         else:
-            return angle * to_degrees
+            # Formula Source:
+            #   x(in degrees)/y(in radians) = 360/2pi -> x = y*180*pi
+            return angle*180/math.pi
 
     # ----------------------- #
     # -   Private Helpers   - #
@@ -634,3 +679,24 @@ class Robot:
             return struct.unpack(">h", data)[0]
         else:
             return 0
+
+    @staticmethod
+    def _encoder_diff(ref_count, new_count, forward=True):
+        """ Calculate the difference between two encoder distances. This will
+            consider the turnover.
+
+        :param ref_count:
+            The reference distance of an encoder
+        :param new_count:
+            The new count of an encoder
+        :param forward:
+            Flag to determine which case to check
+        :return:
+            The difference in encoder distances.
+        """
+        if forward and ref_count > new_count:
+            return (Drive.MAX_DIST - ref_count) - (Drive.MIN_DIST - new_count)
+        elif not forward and new_count > ref_count:
+            return (Drive.MIN_DIST - new_count) - (Drive.MAX_DIST - ref_count)
+        else:
+            return new_count - ref_count
