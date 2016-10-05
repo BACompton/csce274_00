@@ -156,7 +156,6 @@ class Sensor:
     # -                       Read Sensor Methods                        - #
     # -------------------------------------------------------------------- #
 
-    # TODO: add other sensor data
     def is_btn_pressed(self, btn, src = "Default", override=False):
         """ Determines if the specified button has been pressed.
 
