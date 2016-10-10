@@ -11,11 +11,11 @@ import serial_inf
 
 SENSOR_UPDATE_WAIT = .015   # Time in between sensor updates
 
-_BAUD_RATE = 115200     # iRobot Create 2 Default baud rate
-_TIMEOUT = 1            # The default read timeout to avoid indefinite blocking
-_SENSORS_OPCODE = "142" # Opcode for the sensors command
-_BYTE = 0xFF            # Helps isolate a byte
-_BYTE_SIZE = 8          # The number of bit in a byte of iRobot Create 2
+_BAUD_RATE = 115200      # iRobot Create 2 Default baud rate
+_TIMEOUT = 1             # The default read timeout to avoid indefinite blocking
+_SENSORS_OPCODE = "142"  # Opcode for the sensors command
+_BYTE = 0xFF             # Helps isolate a byte
+_BYTE_SIZE = 8           # The number of bit in a byte of iRobot Create 2
 _WHEEL_DIAMETER = 72.0
 _WHEEL_BASE = 235.0
 _COUNTS_PER_REV = 508.8
@@ -56,6 +56,7 @@ class Button:
     PACKET_ID = 18
     DATA_BYTES = 1
 
+
 class Drive:
     """ Represents special cases for the radius of the iRobot Create 2's
         drive command, and the bounds for velocity and radius.
@@ -90,6 +91,7 @@ class Drive:
         return [Drive.ENCODER_L,
                 Drive.ENCODER_R]
 
+
 class Bump:
     """ Represents the two different bumps on the IRobot Create 2. The value
         of each bump are the corresponding bit it refers to in the bump and
@@ -106,6 +108,7 @@ class Bump:
     PACKET_ID = 7
     DATA_BYTES = 1
 
+
 class WheelDrop:
     """ Represents the two different wheel drops on the IRobot Create 2. The
         value of each wheel drop are the corresponding bit it refers to in the
@@ -121,6 +124,7 @@ class WheelDrop:
     # Packet Information
     PACKET_ID = 7
     DATA_BYTES = 1
+
 
 class Cliff:
     """ Represents the cliff and virtual wall sensors on the IRobot Create 2.
@@ -151,6 +155,7 @@ class Cliff:
 # =============================================================================
 #                       iRobot Create 2's Interface
 # =============================================================================
+
 
 class Robot:
     """ Represents a interface for iRobot Create 2 over a serial connection.
@@ -233,7 +238,9 @@ class Robot:
         if radius == Drive.STRAIGHT or radius == Drive.STRAIGHT_ALT:
             bound_rad = radius
         else:
-            bound_rad = self._convert_bound(radius, Drive.MIN_RAD, Drive.MAX_RAD)
+            bound_rad = self._convert_bound(radius,
+                                            Drive.MIN_RAD,
+                                            Drive.MAX_RAD)
 
         # Separates and prepares the data for encoding
         data = (bound_vel >> _BYTE_SIZE & _BYTE,
@@ -295,7 +302,6 @@ class Robot:
         """ Reads the provided button's bit from the Buttons packet. This method
             is available to a robot in the PASSIVE, SAFE, or FULL state.
 
-        :type button Button:
         :param button:
             The button to read
         :return:
@@ -352,7 +358,6 @@ class Robot:
             This method is available to a robot in the PASSIVE, SAFE,
             or FULL state.
 
-        :type bump Bump:
         :param bump:
             The bump to read
         :return:
@@ -396,7 +401,6 @@ class Robot:
             drop packet. This method is available to a robot in the PASSIVE,
             SAFE, or FULL state.
 
-        :type wheel_drop WheelDrop:
         :param wheel_drop:
             The wheel drop to read
         :return:
@@ -472,7 +476,6 @@ class Robot:
         """ Reads the provided cliff or virtual wall sensor. This method is
             available to a robot in the PASSIVE, SAFE, or FULL state.
 
-        :type cliff Cliff
         :param cliff:
             The cliff sensor to read
         :return:
@@ -525,7 +528,7 @@ class Robot:
             A dictionary of each encoder's count as distance. Can be
             referenced by using the encoder values in Drive.
         """
-        enc_list = Drive.encoder_list()
+        enc_list = Drive.list()
         rtn = {}
 
         for enc in enc_list:
@@ -558,11 +561,11 @@ class Robot:
         # For each encoder in both dictionaries increment encoder count and
         # add the difference between the encoder's value to a running summation.
         for dist in ref_dist:
-            if new_dist.has_key(dist):
+            if dist in new_dist:
                 enc_count += 1
                 enc_sum += Robot._encoder_diff(ref_dist[dist],
-                                                 new_dist[dist],
-                                                 forward)
+                                               new_dist[dist],
+                                               forward)
 
         # Average the difference between encoders values
         return enc_sum / enc_count
@@ -590,7 +593,7 @@ class Robot:
         # Only add the difference of the keys that match the value of encoder
         # left or encoder right.
         for dist in ref_angle:
-            if new_angle.has_key(dist):
+            if dist in new_angle:
                 forward = None
 
                 # Note for Differential Drive:
@@ -625,7 +628,8 @@ class Robot:
     # -   Private Helpers   - #
     # ----------------------- #
 
-    def _convert_bound(self, value, lower_bound, upper_bound):
+    @staticmethod
+    def _convert_bound(value, lower_bound, upper_bound):
         """ This begins by converting the provided value into a 16 bit two's
             complement integer. Next, it bounds the converted integer between
              the provided upper and lower bounds.
@@ -648,7 +652,7 @@ class Robot:
         # Extends the most significant bit if it is a 1. This is done by
         # carrying out the most significant bit.
         if bool(convert_val & most_sig_bit):
-            convert_val = convert_val | ~(_BYTE << _BYTE_SIZE | _BYTE)
+            convert_val |= ~(_BYTE << _BYTE_SIZE | _BYTE)
 
         # Bounds the converted value
         if convert_val > upper_bound:

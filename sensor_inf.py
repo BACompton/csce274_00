@@ -10,6 +10,7 @@ import robot_inf
 #                       Internal Sensor Updater
 # =============================================================================
 
+
 class _SensorUpdate(threading.Thread):
     """
         Updates the internal sensor values stored within an instance of Sensor.
@@ -79,6 +80,7 @@ class _SensorUpdate(threading.Thread):
 #                             Sensor Interface
 # =============================================================================
 
+
 class Sensor:
     """
         Interface to help manage and interpret sensor data.
@@ -101,7 +103,6 @@ class Sensor:
     _sensor_update = None
     _interval = None
 
-
     btn_prev = {}
     btn_down = {}
     bump_wheel = {}
@@ -121,6 +122,7 @@ class Sensor:
         """
         self._robot = robot
         self._sensor_sema = threading.Semaphore()
+        self._interval = interval
         self.start_update()
 
     # -------------------------------------------------------------------- #
@@ -156,7 +158,7 @@ class Sensor:
     # -                       Read Sensor Methods                        - #
     # -------------------------------------------------------------------- #
 
-    def is_btn_pressed(self, btn, src = "Default", override=False):
+    def is_btn_pressed(self, btn, src="Default", override=False):
         """ Determines if the specified button has been pressed.
 
             Without overriding this should only be called once per cycle.
@@ -177,9 +179,9 @@ class Sensor:
         self._sensor_sema.acquire()             # Acquire Lock
         self._add_function_key(enc_function)
 
-        if override or not self.request_sources[enc_function].has_key(src):
+        if override or src not in self.request_sources[enc_function]:
             # rtn = not down on previous cycle and is down on current cycle
-            rtn = not self.btn_prev.has_key(btn) and self.btn_down.has_key(btn)
+            rtn = btn not in self.btn_prev and btn in self.btn_down
             self.request_sources[enc_function][src] = True
 
         self._sensor_sema.release()             # Release Lock
@@ -202,14 +204,14 @@ class Sensor:
             True if the button is released.
         """
         enc_function = "BtnRelease"+str(btn)
-        rtn  = False
+        rtn = False
 
         self._sensor_sema.acquire()             # Acquire Lock
         self._add_function_key(enc_function)
 
-        if override or not self.request_sources[enc_function].has_key(src):
+        if override or src not in self.request_sources[enc_function]:
             # rtn = down on previous cycle and is not down on current cycle
-            rtn = self.btn_prev.has_key(btn) and not self.btn_down.has_key(btn)
+            rtn = btn in self.btn_prev and btn not in self.btn_down
             self.request_sources[enc_function][src] = True
 
         self._sensor_sema.release()             # Release Lock
@@ -233,13 +235,13 @@ class Sensor:
         """
         enc_function = "BtnDown"+str(btn)
 
-        rtn  = False
+        rtn = False
 
         self._sensor_sema.acquire()             # Acquire Lock
         self._add_function_key(enc_function)
 
-        if override or not self.request_sources[enc_function].has_key(src):
-            rtn = self.btn_down.has_key(btn)
+        if override or src not in self.request_sources[enc_function]:
+            rtn = btn in self.btn_down
             self.request_sources[enc_function][src] = True
 
         self._sensor_sema.release()             # Release Lock
@@ -263,12 +265,12 @@ class Sensor:
         """
         enc_function = "Bump"+str(bump)
 
-        rtn  = False
+        rtn = False
 
         self._sensor_sema.acquire()             # Acquire Lock
         self._add_function_key(enc_function)
 
-        if override or not self.request_sources[enc_function].has_key(src):
+        if override or src not in self.request_sources[enc_function]:
             rtn = self.bump_wheel[bump]
             self.request_sources[enc_function][src] = True
 
@@ -293,12 +295,12 @@ class Sensor:
         """
         enc_function = "WheelDrop"+str(wheel_drop)
 
-        rtn  = False
+        rtn = False
 
         self._sensor_sema.acquire()             # Acquire Lock
         self._add_function_key(enc_function)
 
-        if override or not self.request_sources[enc_function].has_key(src):
+        if override or src not in self.request_sources[enc_function]:
             rtn = self.bump_wheel[wheel_drop]
             self.request_sources[enc_function][src] = True
 
@@ -324,12 +326,12 @@ class Sensor:
         """
         enc_function = "Cliff"+str(cliff)
 
-        rtn  = False
+        rtn = False
 
         self._sensor_sema.acquire()             # Acquire Lock
         self._add_function_key(enc_function)
 
-        if override or not self.request_sources[enc_function].has_key(src):
+        if override or src not in self.request_sources[enc_function]:
             rtn = self.cliff[cliff]
             self.request_sources[enc_function][src] = True
 
@@ -345,7 +347,7 @@ class Sensor:
         """
 
         self._sensor_sema.acquire()             # Acquire Lock
-        rtn =  self.encoder.copy()
+        rtn = self.encoder.copy()
         self._sensor_sema.release()             # Release Lock
 
         return rtn
@@ -362,7 +364,7 @@ class Sensor:
             The distance between two encoder values
         """
         self._sensor_sema.acquire()             # Acquire Lock
-        dist =  self._robot.distance(ref_dist, self.encoder, forward)
+        dist = self._robot.distance(ref_dist, self.encoder, forward)
         self._sensor_sema.release()             # Release Lock
 
         return dist
@@ -381,7 +383,7 @@ class Sensor:
             The angle between two encoder values
         """
         self._sensor_sema.acquire()             # Acquire Lock
-        dist =  self._robot.angle(ref_angle, self.encoder, radians, cw)
+        dist = self._robot.angle(ref_angle, self.encoder, radians, cw)
         self._sensor_sema.release()             # Release Lock
 
         return dist
@@ -397,5 +399,5 @@ class Sensor:
         :param enc_function:
             The string representing a particular function.
         """
-        if not self.request_sources.has_key(enc_function):
+        if enc_function not in self.request_sources:
             self.request_sources[enc_function] = {}
